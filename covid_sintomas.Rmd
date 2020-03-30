@@ -1,0 +1,218 @@
+---
+title: "Sintomas COVID-19: Analisis de Frecuencia"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(ggplot2)
+library(arules)
+library(splitstackshape)
+```
+
+```{r}
+crudos <- read_csv("Kudos to DXY.cn Last update_ 03_13_2020,  8_00 PM (EST).csv", col_types = cols())
+glimpse(crudos, width = 80)
+```
+
+```{r}
+# Registros de síntomas a variables dummy.
+datos_snulos <- crudos %>%
+  drop_na(symptom) %>%
+  filter(symptom != "")
+  
+datos_snulos$symptom %<>% gsub("\\s+", "", .) # trim entre palabras.
+
+split <- datos_snulos$symptom %>% strsplit(",") # separa por comas en cada celda (lista de listas).
+niveles <- split %>%
+  unlist() %>% # lista plana.
+  unique() # valores únicos de síntomas.
+dummys <- split %>% lapply(function(x) table(factor(x, levels = niveles))) # dummys x registro.
+datos <- data.frame(do.call(rbind, dummys))
+tbl_df(datos)
+```
+
+```{r}
+# Homologamos síntomas.
+sintomas <- datos %>% 
+  mutate(fever = feaver + fever + feve. + highfever + mildfever) %>% # Suma de columnas iguales.
+  select(-c(feaver, feve., highfever, mildfever)) %>% # Descartamos las ya sumadas.
+  
+  mutate(chestpain = chestdiscomfort + chestpain) %>%
+  select(-c(chestdiscomfort)) %>% 
+  
+  mutate(chills = chill + chills) %>%
+  select(-c(chill)) %>% 
+  
+  mutate(cough = cough + coughing + mildcough) %>%
+  select(-c(coughing, mildcough)) %>% 
+  
+  mutate(
+    difficultybreathing = difficultinbreathing + difficultybreathing + shortnessofbreath + breathlessness + respiratorydistress + dyspnea
+  ) %>% select(
+    -c(
+      difficultinbreathing, shortnessofbreath,
+      breathlessness, respiratorydistress, dyspnea
+    )
+  ) %>% 
+
+  mutate(headache = headache + heavyhead) %>%
+  select(-c(heavyhead)) %>%
+  
+  mutate(coughwithsputum = coughwithsputum + sputum) %>%
+  select(-c(sputum)) %>%
+  
+  mutate(runnynose = runnynose + nasaldischarge) %>%
+  select(-c(nasaldischarge)) %>%
+  
+  mutate(malaise = malaise + generalmalaise + physicaldiscomfort + wholebodypain + sorebody + myalgias, tired) %>%
+  select(-c(generalmalaise, physicaldiscomfort, wholebodypain, sorebody, myalgias, tired)) %>%
+  
+  mutate(musclepain = musclepain + myalgia + musclecramps + muscleaches + achingmuscles + backpain, abdominalpain) %>%
+  select(-c(myalgia, musclecramps, muscleaches, achingmuscles, backpain, abdominalpain)) %>%
+  
+  mutate(sorethroat = sorethroat + throatpain + throatdiscomfort + itchythroat) %>%
+  select(-c(throatpain, throatdiscomfort, itchythroat)) %>%
+  
+  mutate(jointpain = jointpain + jointmusclepain) %>%
+  select(-c(jointmusclepain)) %>%
+  
+  mutate(nausea = nausea + vomiting) %>%
+  select(-c(vomiting)) %>%
+  
+  select(-c(hospitalization, flu, flusymptoms, cold, pneumonia, difficultywalking))
+
+  sintomas <- cbind(datos_snulos$id, sintomas)
+  names(sintomas)[1] <- "id"
+  write_csv(sintomas, file.path("D:/dbs/datos/covid", "sintomas_covid.csv"))
+  rownames(sintomas) <- sintomas[, 1]
+  sintomas %<>% select(-id)
+  sintomas_id <- sintomas
+
+  sintomas_casos <- rowSums(sintomas)
+  casos_sin_sintomas <- which(sintomas_casos == 0)
+  sintomas %<>% slice(-c(casos_sin_sintomas))
+```
+
+```{r fig.height = 4, fig.width = 7}
+# Calculamos proporciones.
+sintomas[sintomas > 0] <- 1
+sumas_df <- as.data.frame(colSums(sintomas) / nrow(sintomas)) %>%
+  rownames_to_column("symptom")
+names(sumas_df) <- c("sintomas", "proporcion")
+n_registros <- nrow(sintomas)
+sub_titulo <- paste(n_registros, "Casos Registrados (Wuhan)")
+
+ggplot(data = sumas_df, aes(x = reorder(sintomas, proporcion), y = proporcion)) +
+  geom_bar(stat="identity") +
+  labs(x = "", y = "Proporción", title = "Frecuencia de Síntomas COVID-19", subtitle = sub_titulo) +
+  coord_flip() +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r}
+# Selección de variables y formato para Apriori.
+top_n_sintomas <- 20
+top_sintomas_nombres <- sumas_df %>%
+  arrange(desc(proporcion)) %>%
+  head(top_n_sintomas)
+top_sintomas <- sintomas %>% select(top_sintomas_nombres$sintoma)
+
+datos_transac <- as(
+  data.frame(lapply(top_sintomas, as.character), stringsAsFactors=T),
+  "transactions"
+)
+
+# Sólo queremos combinaciones donde los síntomas estén presentes.
+valores <- c()
+for(col in names(top_sintomas)) {
+  condicion <- paste(col, "=1", sep = "")
+  valores <- c(valores, condicion)
+}
+```
+
+```{r}
+rules <- apriori(
+  datos_transac,
+  parameter = list(supp = 0.025, target = "frequent itemsets", minlen = 2, maxlen = 4),
+  appearance = list(items = valores)
+)
+summary(rules)
+```
+
+```{r}
+reglas_df <- as.data.frame(inspect(rules))
+reglas_df$items %<>%
+  lapply(
+    function(x) mgsub::mgsub(as.character(x), c("=1", "\\{", "}", ","), c("", "", "", " + "))
+  ) %>%
+  unlist()
+```
+
+```{r fig.height = 4, fig.width = 8}
+n_registros <- nrow(datos_transac)
+subtitulo <- paste(n_registros, "Casos Registrados (Wuhan)")
+
+ggplot(data = reglas_df, aes(x = reorder(items, support), y = support)) +
+  geom_bar(stat = "identity") +
+  labs(x = "", y = "Proporción (>= 0.025)", title = "Conbinación de Síntomas COVID-19", subtitle = subtitulo) +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) +
+  coord_flip()
+```
+```{r}
+datos_sintomas <- sintomas_id %>%
+  inner_join(datos_snulos %>% select(id, age, death), by = "id")
+datos_sintomas
+```
+```{r}
+reglas_df <- arrange(reglas_df, desc(count))
+```
+
+```{r}
+datos_sintomas %<>% 
+  mutate(muerte = ifelse(death == 0, 0, 1)) # algunos registros son la fecha del deceso (pasamos todo a binario).
+
+datos_sintomas %>%
+  filter(fever == 1, cough == 1) %>%
+  group_by(muerte) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+
+pct_muertes_sintomas <- c(1, 0, 4, 0,	0, 0,	6,	6,	0,	0,	9,	0,	0,	0,	0,	0,	0,	11,	0)
+```
+
+```{r}
+reglas_decesos <- reglas_df %>% mutate(pct_muertes = pct_muertes_sintomas)
+reglas_decesos %<>%  filter(pct_muertes > 0)
+reglas_decesos
+reglas_decesos %>% mutate(n_decesos = ceiling(count * (pct_muertes / 100)))
+```
+
+```{r fig.height = 3, fig.width = 6}
+ggplot(data = reglas_decesos, aes(x = reorder(items, pct_muertes), y = pct_muertes)) +
+  geom_bar(stat = "identity") +
+  labs(x = "", y = "% descesos", title = "Pct. Decesos por Conbinación de Síntomas COVID-19") +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5), title = element_text(size = 10)) +
+  coord_flip()
+```
+```{r}
+
+# ("1/9", "1/11", "1/17", "1/16", "1/27",  "1/96")
+
+datos_sintomas %>%
+  filter(fever == 1, cough == 1) %>%
+  group_by(muerte) %>%
+  summarise(edad_prom = median(age))
+
+edades <- c(40, 44, 44, 65, 44)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+

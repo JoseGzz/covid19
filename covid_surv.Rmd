@@ -1,0 +1,88 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(survival)
+library(survminer)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+```
+
+```{r}
+crudos <- read_csv("Kudos to DXY.cn Last update_ 03_13_2020,  8_00 PM (EST).csv", col_types = cols())
+glimpse(crudos, width = 80)
+```
+```{r}
+sintomas <- read_csv("sintomas_covid.csv")
+head(sintomas)
+```
+
+```{r}
+age_bins <- c('20-50', '51-80', '81+')
+crudos$age_bin <- cut_interval(crudos$age, n = 3, closed = 'right', labels = age_bins)
+
+datos_snulos <- crudos %>% rename(reporting.date = `reporting date`) %>%
+  mutate(symptom_onset = coalesce(symptom_onset, hosp_visit_date)) %>%
+  mutate(symptom_onset = coalesce(symptom_onset, reporting.date))
+
+cols_de_interes <- datos_snulos %>% select(id, death, symptom_onset, age_bin, symptom, gender)
+muertes_binario <- cols_de_interes %>% mutate(muerte = ifelse(death == 0, 0, 1)) # 1/0 para muertes ya que en algunos casos tenemos fechas.
+fechas_muerte <- muertes_binario %>% filter(death != 1) # nos quedamos con ceros o fechas.
+
+fechas_muerte$death <- as.character(fechas_muerte$death)
+fechas_muerte <- fechas_muerte %>% mutate(fecha_deceso = if_else(muerte == 0, "06/31/2020", death)) # fifelse preserva el tipo de dato de la columna.
+
+fechas_muerte$fecha_deceso <- as.Date(fechas_muerte$fecha_deceso, format="%m/%d/%Y")
+fechas_muerte$symptom_onset <- as.Date(fechas_muerte$symptom_onset, format="%m/%d/%Y")
+fechas_muerte$tiempo <- as.integer(fechas_muerte$fecha_deceso - fechas_muerte$symptom_onset)
+
+fechas_limpio <- fechas_muerte %>%
+  drop_na(tiempo) %>%
+  filter(muerte == 1 & tiempo > 0)
+
+sobrevive <- fechas_muerte %>% filter(muerte == 0)
+sobrevive_muestra <- sobrevive[sample(nrow(sobrevive), nrow(fechas_limpio)), ]
+datos_analisis <- rbind(fechas_limpio, sobrevive_muestra) 
+
+table(datos_analisis$muerte)
+
+fit <- survfit(Surv(tiempo, muerte) ~ 1, data = datos_analisis)
+ggsurvplot(
+  fit,
+  title = "Curva de Supervivencia Kaplan-Meier",
+  subtitle = "Fecha Síntomas vs Fecha Deceso",
+  xlab = "Días desde Primer Sítoma", 
+  ylab = "Prop. Supervivencia",
+  risk.table.title = "Casos en Riesgo",
+  #legend.title = "Rango Edad",
+  risk.table = TRUE,
+  tables.height = 0.25,
+  surv.median.line = "hv",
+  tables.theme = theme_cleantable(),
+  #palette = c("#E7B800", "#2E9FDF", "#2E8FDF"),
+  ggtheme = theme_bw(),
+  pval = TRUE,
+  conf.int = TRUE
+  #ncensor.plot = TRUE
+  #legend.labs = c("rango_1 = 51-80", "rango_2 = 81+")
+) 
+```
+
+```{r}
+datos_analisis %>%
+  filter(age_bin == '51-80') %>%
+  select(symptom)
+```
+
+```{r}
+tmp <- read_csv("Patient-Medical-Data-for-Novel-Coronavirus-COVID-19.csv")
+names(tmp)
+```
+
+```{r}
+table(tmp$DeathQ)
+```
+

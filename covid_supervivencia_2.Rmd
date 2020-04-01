@@ -1,0 +1,63 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+# Datos:
+# https://www.kaggle.com/mkohlegger/covid19-open-access-data#COVID19_2020_open_line_list.xlsx
+library(survival)
+library(survminer)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+library(readxl)
+```
+ 
+```{r}
+crudos <- read_excel("COVID19_2020_limpio_v2.xlsx")
+#glimpse(crudos)
+```
+
+```{r}
+limpios <- crudos %>%
+  drop_na(tiempo)
+```
+
+```{r}
+table(limpios$outcome)
+```
+```{r}
+limpios %<>%
+  mutate(resultado = ifelse(outcome == "death", 1, 0))
+```
+
+```{r}
+modelo <- survfit(Surv(tiempo, evento) ~ 1, data = limpios)
+ggsurvplot(
+  modelo,
+  title = "Curva de Supervivencia Kaplan-Meier",
+  subtitle = "Fecha Ingreso Hospital vs Fecha Salida (Wuhan)",
+  xlab = "Días desde Ingreso", 
+  ylab = "Proporción",
+  risk.table.title = "# de Pacientes",
+  risk.table = TRUE,
+  tables.height = 0.25,
+  surv.median.line = "hv",
+  tables.theme = theme_cleantable(),
+  ggtheme = theme_bw(),
+  pval = TRUE
+) 
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+

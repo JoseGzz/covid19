@@ -159,7 +159,7 @@ subtitulo <- paste(n_registros, "Casos Registrados (Wuhan)")
 
 ggplot(data = reglas_df, aes(x = reorder(items, support), y = support)) +
   geom_bar(stat = "identity") +
-  labs(x = "", y = "Proporcion (>= 0.025)", title = "Conbinacion de Sintomas COVID-19", subtitle = subtitulo) +
+  labs(x = "", y = "Proporcion (>= 0.025)", title = "Combinacion de Sintomas COVID-19", subtitle = subtitulo) +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) +
   coord_flip()
 ```
@@ -192,7 +192,7 @@ reglas_decesos %>% mutate(n_decesos = ceiling(count * (pct_muertes / 100)))
 ```{r fig.height = 3, fig.width = 6}
 ggplot(data = reglas_decesos, aes(x = reorder(items, pct_muertes), y = pct_muertes)) +
   geom_bar(stat = "identity") +
-  labs(x = "", y = "% descesos", title = "Pct. Decesos por Conbinacion de Sintomas COVID-19") +
+  labs(x = "", y = "% descesos", title = "Pct. Decesos por Combinacion de Sintomas COVID-19") +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5), title = element_text(size = 10)) +
   coord_flip()
 ```
